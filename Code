@@ -1,11 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <string.h>
+#include <pthread.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
-#include <pthread.h>
 
+#define NUM_PROCESSES 2
+#define NUM_THREADS 4
 #define SHM_SIZE 1024
 
 // Shared memory key
@@ -13,62 +16,15 @@
 
 // Data structure for shared memory
 typedef struct {
-    int is_ready;
-    char message[SHM_SIZE];
+    int data;
+    pthread_mutex_t mutex;
 } shared_data_t;
 
-// Function to simulate message passing between processes
-void simulate_ipc_processes() {
-    // Create shared memory segment
-    int shmid = shmget(SHM_KEY, sizeof(shared_data_t), IPC_CREAT | 0666);
-    if (shmid < 0) {
-        perror("shmget");
-        exit(EXIT_FAILURE);
-    }
-
-    // Attach shared memory
-    shared_data_t *data = (shared_data_t *)shmat(shmid, NULL, 0);
-    if (data == (void *)-1) {
-        perror("shmat");
-        exit(EXIT_FAILURE);
-    }
-
-    // Simulate sending short message
-    strcpy(data->message, "Short message");
-    data->is_ready = 1;
-
-    // Wait for receiver to read the message
-    while (data->is_ready)
-        sleep(1);
-
-    // Simulate sending long message
-    memset(data->message, 'X', SHM_SIZE - 1);
-    data->message[SHM_SIZE - 1] = '\0';
-    data->is_ready = 1;
-
-    // Detach and remove shared memory
-    shmdt(data);
-    shmctl(shmid, IPC_RMID, NULL);
-}
-
-// Function to simulate message passing between threads
-void* simulate_ipc_threads(void* arg) {
-    shared_data_t *data = (shared_data_t *)arg;
-
-    // Simulate sending short message
-    strcpy(data->message, "Short message");
-    data->is_ready = 1;
-
-    // Wait for receiver to read the message
-    while (data->is_ready)
-        sleep(1);
-
-    // Simulate sending long message
-    memset(data->message, 'X', SHM_SIZE - 1);
-    data->message[SHM_SIZE - 1] = '\0';
-    data->is_ready = 1;
-
-    pthread_exit(NULL);
+// Function to simulate parallel mathematical operations
+void* parallel_math(void* arg) {
+    int* num = (int*)arg;
+    *num = *num * *num; // Square the number
+    return NULL;
 }
 
 int main() {
@@ -80,24 +36,51 @@ int main() {
     }
 
     // Attach shared memory
-    shared_data_t *data = (shared_data_t *)shmat(shmid, NULL, 0);
-    if (data == (void *)-1) {
+    shared_data_t* data = (shared_data_t*)shmat(shmid, NULL, 0);
+    if (data == (void*)-1) {
         perror("shmat");
         exit(EXIT_FAILURE);
     }
 
-    // Initialize shared memory data
-    data->is_ready = 0;
+    // Initialize shared data
+    data->data = 10; // Initial value
+    pthread_mutex_init(&data->mutex, NULL);
 
-    // Simulate IPC between processes
-    simulate_ipc_processes();
+    // Create processes
+    for (int i = 0; i < NUM_PROCESSES; i++) {
+        pid_t pid = fork();
+        if (pid == 0) { // Child process
+            // Create threads
+            pthread_t threads[NUM_THREADS];
+            for (int j = 0; j < NUM_THREADS; j++) {
+                if (pthread_create(&threads[j], NULL, parallel_math, &data->data) != 0) {
+                    perror("pthread_create");
+                    exit(EXIT_FAILURE);
+                }
+            }
 
-    // Simulate IPC between threads
-    pthread_t thread;
-    pthread_create(&thread, NULL, simulate_ipc_threads, (void *)data);
-    pthread_join(thread, NULL);
+            // Wait for threads to finish
+            for (int j = 0; j < NUM_THREADS; j++) {
+                pthread_join(threads[j], NULL);
+            }
+
+            // Print the squared number
+            printf("Process %d: %d\n", i, data->data);
+
+            exit(EXIT_SUCCESS);
+        } else if (pid < 0) {
+            perror("fork");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // Wait for all processes to finish
+    for (int i = 0; i < NUM_PROCESSES; i++) {
+        wait(NULL);
+    }
 
     // Detach and remove shared memory
+    pthread_mutex_destroy(&data->mutex);
     shmdt(data);
     shmctl(shmid, IPC_RMID, NULL);
 
