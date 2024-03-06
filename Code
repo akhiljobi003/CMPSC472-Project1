@@ -1,0 +1,105 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <pthread.h>
+
+#define SHM_SIZE 1024
+
+// Shared memory key
+#define SHM_KEY 1234
+
+// Data structure for shared memory
+typedef struct {
+    int is_ready;
+    char message[SHM_SIZE];
+} shared_data_t;
+
+// Function to simulate message passing between processes
+void simulate_ipc_processes() {
+    // Create shared memory segment
+    int shmid = shmget(SHM_KEY, sizeof(shared_data_t), IPC_CREAT | 0666);
+    if (shmid < 0) {
+        perror("shmget");
+        exit(EXIT_FAILURE);
+    }
+
+    // Attach shared memory
+    shared_data_t *data = (shared_data_t *)shmat(shmid, NULL, 0);
+    if (data == (void *)-1) {
+        perror("shmat");
+        exit(EXIT_FAILURE);
+    }
+
+    // Simulate sending short message
+    strcpy(data->message, "Short message");
+    data->is_ready = 1;
+
+    // Wait for receiver to read the message
+    while (data->is_ready)
+        sleep(1);
+
+    // Simulate sending long message
+    memset(data->message, 'X', SHM_SIZE - 1);
+    data->message[SHM_SIZE - 1] = '\0';
+    data->is_ready = 1;
+
+    // Detach and remove shared memory
+    shmdt(data);
+    shmctl(shmid, IPC_RMID, NULL);
+}
+
+// Function to simulate message passing between threads
+void* simulate_ipc_threads(void* arg) {
+    shared_data_t *data = (shared_data_t *)arg;
+
+    // Simulate sending short message
+    strcpy(data->message, "Short message");
+    data->is_ready = 1;
+
+    // Wait for receiver to read the message
+    while (data->is_ready)
+        sleep(1);
+
+    // Simulate sending long message
+    memset(data->message, 'X', SHM_SIZE - 1);
+    data->message[SHM_SIZE - 1] = '\0';
+    data->is_ready = 1;
+
+    pthread_exit(NULL);
+}
+
+int main() {
+    // Create shared memory segment
+    int shmid = shmget(SHM_KEY, sizeof(shared_data_t), IPC_CREAT | 0666);
+    if (shmid < 0) {
+        perror("shmget");
+        exit(EXIT_FAILURE);
+    }
+
+    // Attach shared memory
+    shared_data_t *data = (shared_data_t *)shmat(shmid, NULL, 0);
+    if (data == (void *)-1) {
+        perror("shmat");
+        exit(EXIT_FAILURE);
+    }
+
+    // Initialize shared memory data
+    data->is_ready = 0;
+
+    // Simulate IPC between processes
+    simulate_ipc_processes();
+
+    // Simulate IPC between threads
+    pthread_t thread;
+    pthread_create(&thread, NULL, simulate_ipc_threads, (void *)data);
+    pthread_join(thread, NULL);
+
+    // Detach and remove shared memory
+    shmdt(data);
+    shmctl(shmid, IPC_RMID, NULL);
+
+    return 0;
+}
