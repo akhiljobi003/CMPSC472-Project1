@@ -24,9 +24,9 @@ typedef struct {
 // Structure to store process information
 typedef struct {
     pid_t id;
-    int status;  // 0: running, 1: suspended
+    int status;  
     int num_threads;
-    ThreadInfo threads[MAX_THREADS];  // Max 10 threads per process
+    ThreadInfo threads[MAX_THREADS];  
 } ProcessInfo;
 
 // IPC shared memory data structure
