@@ -119,7 +119,7 @@ int main() {
         printf("Parent process.\n");
         // Wait for child to terminate
         wait(NULL);
-        process_text_file("example.txt");
+        process_text_file("Example.txt");
     } else {
         // Error
         perror("fork");
