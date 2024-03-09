@@ -98,36 +98,66 @@ int main() {
     ProcessInfo processes[MAX_PROCESSES];  // Max 5 processes
     int num_processes = 0;
 
-    // Example: Create a new process
-    pid_t pid = fork();
-    if (pid == 0) {
-        // Child process
-        printf("Child process created.\n");
-        // Example: Create a new thread in the child process
-        pthread_t tid;
-        pthread_create(&tid, NULL, thread_function, NULL);
-        processes[num_processes].id = getpid();
-        processes[num_processes].status = 0;
-        processes[num_processes].num_threads = 1;
-        processes[num_processes].threads[0].id = tid;
-        processes[num_processes].threads[0].status = 0;
-        num_processes++;
-        pthread_join(tid, NULL);
-        simulate_ipc_processes(processes, num_processes);
-    } else if (pid > 0) {
-        // Parent process
-        printf("Parent process.\n");
-        // Wait for child to terminate
-        wait(NULL);
-        process_text_file("Example.txt");
-    } else {
-        // Error
-        perror("fork");
-        exit(EXIT_FAILURE);
-    }
+     int choice;
+    do {
+        // Display menu
+        printf("\nMenu:\n");
+        printf("1. Create a new process and thread\n");
+        printf("2. Simulate IPC over processes\n");
+        printf("3. Process a text file\n");
+        printf("4. Display process and thread information\n");
+        printf("5. Exit\n");
+        printf("Enter your choice: ");
+        scanf("%d", &choice);
 
-    // Display process and thread information
-    display(processes, num_processes);
+        switch (choice) {
+            case 1: {
+                // Create a new process and thread
+                pid_t pid = fork();
+                if (pid == 0) {
+                    // Child process
+                    printf("Child process created.\n");
+                    pthread_t tid;
+                    pthread_create(&tid, NULL, thread_function, NULL);
+                    processes[num_processes].id = getpid();
+                    processes[num_processes].status = 0;
+                    processes[num_processes].num_threads = 1;
+                    processes[num_processes].threads[0].id = tid;
+                    processes[num_processes].threads[0].status = 0;
+                    num_processes++;
+                    pthread_join(tid, NULL);
+                } else if (pid > 0) {
+                    // Parent process
+                    printf("Parent process.\n");
+                    wait(NULL);
+                } else {
+                    // Error
+                    perror("fork");
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            }
+            case 2:
+                // Simulate IPC over processes
+                simulate_ipc_processes(processes, num_processes);
+                break;
+            case 3:
+                // Process a text file
+                process_text_file("Example.txt");
+                break;
+            case 4:
+                // Display process and thread information
+                display(processes, num_processes);
+                break;
+            case 5:
+                // Exit
+                printf("Exiting program.\n");
+                break;
+            default:
+                printf("Invalid choice. Please try again.\n");
+                break;
+        }
+    } while (choice != 5);
 
     return 0;
 }
