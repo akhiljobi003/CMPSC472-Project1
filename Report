@@ -1,2 +1,9 @@
-The code is a implementaion of an operating system that includes a multi process and thread task manager, inter
-process communication, parallel mathematical operations, and a simple UI. 
+The code is a implementaion of an operating system that includes a multi process and thread task manager, 
+inter process communication, parallel mathematical operations, and a simple UI. The code defines constants
+like max number of threads or max number of processes. Then it defines the structure of different thread 
+information such as ID and number of threads. Then there is a function to display the information about 
+thread and process, process text files, and simulating IPC using shared memory. The main function 
+initializes an array to store process information and implements a simple menu driven interface, such as 
+create new process, simulate IPC, process text file, and display information. Overall the code demonstrates
+concepts of process and thread creation, IPC using shared memory and file processing. Some challanges I 
+faced was handling file operations such as opening and rading the text files. 
