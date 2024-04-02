@@ -9,16 +9,21 @@
 #include <ctype.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <signal.h>
+#include <semaphore.h>
 
 #define MAX_THREADS 10
 #define MAX_PROCESSES 5
 #define MAX_MESSAGE_SIZE 1024
 #define BUFFER_SIZE 1024
 
+sem_t sem; //declares a semaphore variable
+
 // Structure to store thread information
 typedef struct {
     pthread_t id;
     int status;  // 0: running, 1: suspended
+    char message[MAX_MESSAGE_SIZE]; //declares a character array named message with a maximum size of MAX_MESSAGE_SIZE
 } ThreadInfo;
 
 // Structure to store process information
@@ -76,6 +81,177 @@ void process_text_file(char* filename) {
     }
 }
 
+void* thread_function(void* arg) {
+    // This is the function that the new thread will execute
+    printf("Thread function\n");
+    return NULL;
+}
+
+// Function to kill a process
+void kill_process(pid_t pid) {
+    if (kill(pid, SIGKILL) == -1) {
+        perror("kill");
+    } else {
+        printf("Process with PID %d killed.\n", pid);
+    }
+}
+
+// Function to suspend a process
+void suspend_process(pid_t pid) {
+    if (kill(pid, SIGSTOP) == -1) {
+        perror("kill");
+    } else {
+        printf("Process with PID %d suspended.\n", pid);
+    }
+}
+
+// Function to resume a process
+void resume_process(ProcessInfo *process) {
+    if (process->status == 1) {
+        // Resume the process
+        kill(process->id, SIGCONT);
+        process->status = 0;  // Update status to running
+        printf("Resumed process with PID %d\n", process->id);
+    } else {
+        printf("Process with PID %d is not suspended\n", process->id);
+    }
+}
+
+// Function to create a new thread
+void create_new_thread(ProcessInfo *process) {
+    if (process->num_threads < MAX_THREADS) {
+        pthread_t tid;
+        pthread_create(&tid, NULL, thread_function, NULL);
+        process->threads[process->num_threads].id = tid;
+        process->threads[process->num_threads].status = 0;  // Set thread status to running
+        process->num_threads++;
+        printf("Created new thread with ID %lu for process with PID %d\n", tid, process->id);
+    } else {
+        printf("Maximum number of threads reached for process with PID %d\n", process->id);
+    }
+}
+
+// Function to terminate a thread
+void terminate_thread(pthread_t tid) {
+    pthread_cancel(tid);
+}
+
+// Function to suspend a thread
+void suspend_thread(pthread_t tid, ThreadInfo *threads, int num_threads) {
+    // Set a flag to suspend the thread
+    for (int i = 0; i < num_threads; i++) {
+        if (threads[i].id == tid) {
+            threads[i].status = 1; // 1: suspended
+            strcpy(threads[i].message, "Suspended");
+            break;
+        }
+    }
+}
+
+// Function to resume a suspended thread
+void resume_thread(pthread_t tid, ThreadInfo *threads, int num_threads) {
+    // Clear the flag to resume the thread
+    for (int i = 0; i < num_threads; i++) {
+        if (threads[i].id == tid) {
+            threads[i].status = 0; // 0: running
+            break;
+        }
+    }
+}
+
+// Function to manage processes and threads
+void manage_processes_and_threads(ProcessInfo *processes, int num_processes) {
+    int choice;
+    do {
+        // Display menu
+        printf("\nProcess and Thread Management Menu:\n");
+        printf("1. Kill a process\n");
+        printf("2. Suspend a process\n");
+        printf("3. Resume a process\n");
+        printf("4. Create a new thread\n");
+        printf("5. Terminate a thread\n");
+        printf("6. Suspend a thread\n");
+        printf("7. Resume a thread\n");
+        printf("8. Back to main menu\n");
+        printf("Enter your choice: ");
+        scanf("%d", &choice);
+
+        switch (choice) {
+            case 1:{
+                // Kill a process
+                pid_t pid;
+                printf("Enter the PID of the process to kill: ");
+                scanf("%d", &pid);
+                kill_process(pid);
+                break;
+            }
+            case 2: {
+                // Suspend a process
+                pid_t pid;
+                printf("Enter the PID of the process to suspend: ");
+                scanf("%d", &pid);
+                suspend_process(pid);
+            }
+            case 3: {
+               // Resume a process
+                int pid;
+                printf("Enter PID of the process to resume: ");
+                scanf("%d", &pid);
+                for (int i = 0; i < num_processes; i++) {
+                    if (processes[i].id == pid) {
+                        resume_process(&processes[i]);
+                        break;
+                    }
+                }
+                break;
+            }
+            case 4: {
+                // Create a new thread
+                int pid;
+                printf("Enter PID of the process to create a new thread: ");
+                scanf("%d", &pid);
+                for (int i = 0; i < num_processes; i++) {
+                    if (processes[i].id == pid) {
+                        create_new_thread(&processes[i]);
+                        break;
+                    }
+                }
+                break;
+            }
+            case 5: {
+                // Terminate a thread
+                printf("Enter thread ID to terminate: ");
+                pthread_t tid;
+                scanf("%lu", &tid);
+                terminate_thread(tid);
+                break;
+            }
+            case 6:{
+                // Suspend a thread
+               printf("Enter thread ID to suspend: ");
+                pthread_t tid_suspend;
+                scanf("%lu", &tid_suspend);
+                suspend_thread(tid_suspend, processes[0].threads, processes[0].num_threads);
+                break;
+            }
+            case 7: {
+                // Resume a thread
+                printf("Enter thread ID to resume: ");
+                pthread_t tid_resume;
+                scanf("%lu", &tid_resume);
+                resume_thread(tid_resume, processes[0].threads, processes[0].num_threads);
+                break;
+            }
+            case 8:
+                printf("Returning to main menu.\n");
+                break;
+            default:
+                printf("Invalid choice. Please try again.\n");
+                break;
+        }
+    } while (choice != 8);
+}
+
 // Function to simulate IPC over processes using shared memory
 void simulate_ipc_processes(ProcessInfo *processes, int num_processes) {
     int shmid;
@@ -83,19 +259,79 @@ void simulate_ipc_processes(ProcessInfo *processes, int num_processes) {
     key_t key = ftok("shared_memory_key", 65);
     shmid = shmget(key, sizeof(SharedMemory), 0666|IPC_CREAT);
     shm = (SharedMemory*)shmat(shmid, (void*)0, 0);
-    strcpy(shm->message, "Hello from shared memory");
-    printf("Message from shared memory: %s\n", shm->message);
+    // Initialize the semaphore
+    sem_init(&sem, 0, 1);
+
+    // Assuming each process has at least one thread
+    for (int i = 0; i < num_processes; i++) {
+        ProcessInfo *process = &processes[i];
+        for (int j = 0; j < process->num_threads; j++) {
+            ThreadInfo *thread = &process->threads[j];
+
+            // Create a new thread to simulate IPC
+            pthread_create(&thread->id, NULL, thread_function, (void*)shm);
+        }
+    }
+
+    // Wait for all threads to finish
+    for (int i = 0; i < num_processes; i++) {
+        ProcessInfo *process = &processes[i];
+        for (int j = 0; j < process->num_threads; j++) {
+            pthread_join(process->threads[j].id, NULL);
+        }
+    }
+
+    // Clean up
     shmdt(shm);
     shmctl(shmid, IPC_RMID, NULL);
+    sem_destroy(&sem);
 }
-void* thread_function(void* arg) {
-    // This is the function that the new thread will execute
-    printf("Thread function\n");
+
+void* ipc_thread_function(void* arg) { //execute threads to simulate IPC using shared memory
+    SharedMemory *shm = (SharedMemory*)arg;
+    char message[MAX_MESSAGE_SIZE];
+
+    // Acquire the semaphore
+    sem_wait(&sem);
+
+    // Read the shared memory
+    strcpy(message, shm->message);
+    printf("Thread %lu received message: %s\n", pthread_self(), message);
+
+    // Modify the shared memory
+    sprintf(shm->message, "Thread %lu sent message", pthread_self());
+
+    // Release the semaphore
+    sem_post(&sem);
+
     return NULL;
 }
 
+
+// Function to simulate IPC over threads using shared memory
+void simulate_ipc_threads(ProcessInfo *processes, int num_processes) {
+    // Assuming each process has at least one thread
+    for (int i = 0; i < num_processes; i++) {
+        ProcessInfo *process = &processes[i];
+        for (int j = 0; j < process->num_threads; j++) {
+            ThreadInfo *thread = &process->threads[j];
+
+            // Shared memory operations for each thread
+            // Use pthread_create to create threads if necessary
+
+            // Simulate message passing
+            char message[MAX_MESSAGE_SIZE] = "Hello from thread";
+            printf("Thread %lu sending message: %s\n", thread->id, message);
+
+            // Process received message
+            // Use pthread_join to wait for threads to finish if necessary
+        }
+    }
+}
+
+
 int main() {
-    ProcessInfo processes[MAX_PROCESSES];  // Max 5 processes
+    ProcessInfo processes[MAX_PROCESSES];  // Max 7 processes
     int num_processes = 0;
 
      int choice;
@@ -104,9 +340,11 @@ int main() {
         printf("\nMenu:\n");
         printf("1. Create a new process and thread\n");
         printf("2. Simulate IPC over processes\n");
-        printf("3. Process a text file\n");
-        printf("4. Display process and thread information\n");
-        printf("5. Exit\n");
+        printf("3. Simulate IPC over threads\n");//add option to simulate IPC over threads.
+        printf("4. Process a text file\n");
+        printf("5. Display process and thread information\n");
+        printf("6. Manage processes and threads\n");//add option to manage processes and threads
+        printf("7. Exit\n");
         printf("Enter your choice: ");
         scanf("%d", &choice);
 
@@ -142,14 +380,22 @@ int main() {
                 simulate_ipc_processes(processes, num_processes);
                 break;
             case 3:
+                // Simulate IPC over threads
+                simulate_ipc_threads(processes, num_processes);
+                break;
+            case 4:
                 // Process a text file
                 process_text_file("Example.txt");
                 break;
-            case 4:
+            case 5:
                 // Display process and thread information
                 display(processes, num_processes);
                 break;
-            case 5:
+            case 6:
+                //Case to manage processes and threads
+                manage_processes_and_threads(processes, num_processes);
+                break;
+            case 7:
                 // Exit
                 printf("Exiting program.\n");
                 break;
@@ -157,7 +403,10 @@ int main() {
                 printf("Invalid choice. Please try again.\n");
                 break;
         }
-    } while (choice != 5);
+    } while (choice != 7);
 
     return 0;
 }
+
+
+
