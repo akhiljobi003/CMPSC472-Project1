@@ -1,0 +1,163 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <sys/wait.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <string.h>
+#include <ctype.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#define MAX_THREADS 10
+#define MAX_PROCESSES 5
+#define MAX_MESSAGE_SIZE 1024
+#define BUFFER_SIZE 1024
+
+// Structure to store thread information
+typedef struct {
+    pthread_t id;
+    int status;  // 0: running, 1: suspended
+} ThreadInfo;
+
+// Structure to store process information
+typedef struct {
+    pid_t id;
+    int status;  
+    int num_threads;
+    ThreadInfo threads[MAX_THREADS];  
+} ProcessInfo;
+
+// IPC shared memory data structure
+typedef struct {
+    int size;
+    char message[MAX_MESSAGE_SIZE];
+} SharedMemory;
+
+// Function to display process and thread information
+void display(ProcessInfo *processes, int num_processes) {
+    printf("Process ID\tStatus\tNum Threads\n");
+    for (int i = 0; i < num_processes; i++) {
+        printf("%d\t\t%s\t%d\n", processes[i].id, processes[i].status == 0 ? "Running" : "Suspended", processes[i].num_threads);
+        printf("Thread ID\tStatus\n");
+        for (int j = 0; j < processes[i].num_threads; j++) {
+            printf("%lu\t%s\n", processes[i].threads[j].id, processes[i].threads[j].status == 0 ? "Running" : "Suspended");
+        }
+        if (processes[i].num_threads == 0) {
+            printf("No threads\n");
+        }
+    }
+}
+
+// Function to convert characters to uppercase and count occurrences
+void process_text_file(char* filename) {
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        perror("Error opening file");
+        exit(EXIT_FAILURE);
+    }
+   int char_count[256] = {0};  // Assuming ASCII characters
+    char buffer[BUFFER_SIZE];
+    while (fgets(buffer, BUFFER_SIZE, file) != NULL) {
+        for (int i = 0; buffer[i] != '\0'; i++) {
+            if (isalpha(buffer[i])) {
+                buffer[i] = toupper(buffer[i]);
+                char_count[(int)buffer[i]]++;
+            }
+        }
+    }
+    fclose(file);
+    // Print character counts
+    for (int i = 0; i < 256; i++) {
+        if (char_count[i] > 0) {
+            printf("%c: %d\n", (char)i, char_count[i]);
+        }
+    }
+}
+
+// Function to simulate IPC over processes using shared memory
+void simulate_ipc_processes(ProcessInfo *processes, int num_processes) {
+    int shmid;
+    SharedMemory *shm;
+    key_t key = ftok("shared_memory_key", 65);
+    shmid = shmget(key, sizeof(SharedMemory), 0666|IPC_CREAT);
+    shm = (SharedMemory*)shmat(shmid, (void*)0, 0);
+    strcpy(shm->message, "Hello from shared memory");
+    printf("Message from shared memory: %s\n", shm->message);
+    shmdt(shm);
+    shmctl(shmid, IPC_RMID, NULL);
+}
+void* thread_function(void* arg) {
+    // This is the function that the new thread will execute
+    printf("Thread function\n");
+    return NULL;
+}
+
+int main() {
+    ProcessInfo processes[MAX_PROCESSES];  // Max 5 processes
+    int num_processes = 0;
+
+     int choice;
+    do {
+        // Display menu
+        printf("\nMenu:\n");
+        printf("1. Create a new process and thread\n");
+        printf("2. Simulate IPC over processes\n");
+        printf("3. Process a text file\n");
+        printf("4. Display process and thread information\n");
+        printf("5. Exit\n");
+        printf("Enter your choice: ");
+        scanf("%d", &choice);
+
+        switch (choice) {
+            case 1: {
+                // Create a new process and thread
+                pid_t pid = fork();
+                if (pid == 0) {
+                    // Child process
+                    printf("Child process created.\n");
+                    pthread_t tid;
+                    pthread_create(&tid, NULL, thread_function, NULL);
+                    processes[num_processes].id = getpid();
+                    processes[num_processes].status = 0;
+                    processes[num_processes].num_threads = 1;
+                    processes[num_processes].threads[0].id = tid;
+                    processes[num_processes].threads[0].status = 0;
+                    num_processes++;
+                    pthread_join(tid, NULL);
+                } else if (pid > 0) {
+                    // Parent process
+                    printf("Parent process.\n");
+                    wait(NULL);
+                } else {
+                    // Error
+                    perror("fork");
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            }
+            case 2:
+                // Simulate IPC over processes
+                simulate_ipc_processes(processes, num_processes);
+                break;
+            case 3:
+                // Process a text file
+                process_text_file("Example.txt");
+                break;
+            case 4:
+                // Display process and thread information
+                display(processes, num_processes);
+                break;
+            case 5:
+                // Exit
+                printf("Exiting program.\n");
+                break;
+            default:
+                printf("Invalid choice. Please try again.\n");
+                break;
+        }
+    } while (choice != 5);
+
+    return 0;
+}
